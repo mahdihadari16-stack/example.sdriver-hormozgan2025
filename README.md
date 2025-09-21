@@ -1045,4 +1045,555 @@ public class EmailReportService {
         return """
             <div dir="rtl" style="font-family: Tahoma;">
                 <h2>سلام %s عزیز</h2>
-                <p>گزارش
+                <p>گزارش ماهانه عملکرد شما برای %s آماده شده است.</p>
+                
+                <h3>خلاصه عملکرد:</h3>
+                <ul>
+                    <li>امتیاز کلی: %.1f از 5</li>
+                    <li>تعداد سفرها: %d</li>
+                    <li>درآمد: %s تومان</li>
+                </ul>
+                
+                <p>گزارش کامل در فایل پیوست موجود است.</p>
+                <p>موفق باشید!</p>
+                
+                <hr>
+                <small>تیم فنی اپلیکیشن</small>
+            </div>
+            """.formatted(
+                driver.getName(),
+                report.getReportMonth(),
+                report.getExecutiveSummary().getAverageRating(),
+                report.getExecutiveSummary().getTotalTrips(),
+                report.getExecutiveSummary().getFormattedEarnings()
+            );
+    }
+}
+```
+
+### 📄 PDF Report Generator
+
+#### 4.6 PDF Generation Service
+```java
+@Service
+public class ReportPDFGenerator {
+    
+    public byte[] generatePDF(MonthlyReport report) throws Exception {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            PdfWriter writer = new PdfWriter(baos);
+            PdfDocument pdf = new PdfDocument(writer);
+            Document document = new Document(pdf);
+            
+            // فونت فارسی
+            PdfFont font = PdfFontFactory.createFont("assets/fonts/Shabnam.ttf", 
+                PdfEncodings.IDENTITY_H);
+            document.setFont(font);
+            
+            // هدر گزارش
+            addReportHeader(document, report);
+            
+            // خلاصه اجرایی
+            addExecutiveSummary(document, report.getExecutiveSummary());
+            
+            // پیشرفت اهداف
+            addGoalProgress(document, report.getGoalProgress());
+            
+            // تحلیل اوج عملکرد
+            addPeakAnalysis(document, report.getPeakAnalysis());
+            
+            // برنامه عملیاتی
+            addActionPlans(document, report.getActionPlans());
+            
+            // پیش‌بینی‌ها
+            addPredictions(document, report.getPredictions());
+            
+            document.close();
+            return baos.toByteArray();
+        }
+    }
+    
+    private void addReportHeader(Document document, MonthlyReport report) {
+        Paragraph header = new Paragraph("گزارش ماهانه عملکرد")
+            .setFontSize(24)
+            .setBold()
+            .setTextAlignment(TextAlignment.CENTER);
+        
+        document.add(header);
+        
+        Paragraph subHeader = new Paragraph("ماه: " + report.getReportMonth())
+            .setFontSize(16)
+            .setTextAlignment(TextAlignment.CENTER);
+        
+        document.add(subHeader);
+        document.add(new Paragraph("\n"));
+    }
+}
+```
+
+### ✅ خروجی مرحله 4
+- [ ] سیستم گزارش‌گیری ماهانه خودکار
+- [ ] سیستم دستاوردها و مدال‌ها
+- [ ] پیش‌بینی عملکرد با ML
+- [ ] سیستم نوتیفیکیشن کامل
+- [ ] تولید PDF گزارش‌ها
+
+---
+
+## 🚀 Phase 5: استقرار و نظارت
+**مدت زمان:** هفته 9-10
+
+### 🎯 اهداف
+- استقرار در محیط تولید
+- راه‌اندازی سیستم‌های نظارت
+- بهینه‌سازی عملکرد
+- آموزش کاربران
+
+### 🐳 Production Deployment
+
+#### 5.1 Kubernetes Deployment
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: driver-rating-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: driver-rating-backend
+  template:
+    metadata:
+      labels:
+        app: driver-rating-backend
+    spec:
+      containers:
+      - name: backend
+        image: driver-rating-backend:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: host
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: driver-rating-service
+spec:
+  selector:
+    app: driver-rating-backend
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: LoadBalancer
+```
+
+#### 5.2 Database Migration Script
+```sql
+-- Production database setup
+CREATE DATABASE driver_rating_prod;
+
+-- Performance optimized indexes
+CREATE INDEX CONCURRENTLY idx_ratings_driver_created ON ratings(driver_id, created_at DESC);
+CREATE INDEX CONCURRENTLY idx_trips_driver_date ON trips(driver_id, start_time DESC);
+CREATE INDEX CONCURRENTLY idx_performance_driver_date ON performance_metrics(driver_id, date DESC);
+
+-- Partitioning for large tables
+CREATE TABLE ratings_2024 PARTITION OF ratings
+FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+
+-- Views for reporting
+CREATE VIEW driver_monthly_stats AS
+SELECT 
+    driver_id,
+    DATE_TRUNC('month', created_at) as month,
+    AVG(overall_rating) as avg_rating,
+    COUNT(*) as total_ratings,
+    AVG(cleanliness_rating) as avg_cleanliness,
+    AVG(politeness_rating) as avg_politeness
+FROM ratings
+GROUP BY driver_id, DATE_TRUNC('month', created_at);
+```
+
+### 📊 Monitoring Setup
+
+#### 5.3 Prometheus Configuration
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'driver-rating-backend'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: /actuator/prometheus
+    
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+```
+
+#### 5.4 Grafana Dashboard
+```json
+{
+  "dashboard": {
+    "title": "Driver Rating System Monitoring",
+    "panels": [
+      {
+        "title": "API Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+            "legendFormat": "Average Response Time"
+          }
+        ]
+      },
+      {
+        "title": "Database Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends",
+            "legendFormat": "Active Connections"
+          }
+        ]
+      },
+      {
+        "title": "Rating Submissions Per Hour",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ratings_submitted_total[1h])",
+            "legendFormat": "Ratings/Hour"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### 5.5 Application Health Checks
+```java
+@Component
+public class HealthCheckController {
+    
+    @Autowired
+    private DataSource dataSource;
+    
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, String>> healthCheck() {
+        Map<String, String> health = new HashMap<>();
+        
+        // بررسی دیتابیس
+        try {
+            dataSource.getConnection().close();
+            health.put("database", "UP");
+        } catch (Exception e) {
+            health.put("database", "DOWN");
+            return ResponseEntity.status(503).body(health);
+        }
+        
+        // بررسی Redis
+        try {
+            redisTemplate.opsForValue().get("health-check");
+            health.put("redis", "UP");
+        } catch (Exception e) {
+            health.put("redis", "DOWN");
+        }
+        
+        health.put("status", "UP");
+        health.put("timestamp", LocalDateTime.now().toString());
+        
+        return ResponseEntity.ok(health);
+    }
+}
+```
+
+### ⚡ Performance Optimization
+
+#### 5.6 Caching Strategy
+```java
+@Configuration
+@EnableCaching
+public class CacheConfiguration {
+    
+    @Bean
+    public CacheManager cacheManager() {
+        RedisCacheManager.Builder builder = RedisCacheManager
+            .RedisCacheManagerBuilder
+            .fromConnectionFactory(redisConnectionFactory())
+            .cacheDefaults(cacheConfiguration());
+        
+        return builder.build();
+    }
+    
+    private RedisCacheConfiguration cacheConfiguration() {
+        return RedisCacheConfiguration.defaultCacheConfig()
+            .entryTtl(Duration.ofMinutes(30))
+            .disableCachingNullValues()
+            .serializeKeysWith(RedisSerializationContext.SerializationPair
+                .fromSerializer(new StringRedisSerializer()))
+            .serializeValuesWith(RedisSerializationContext.SerializationPair
+                .fromSerializer(new GenericJackson2JsonRedisSerializer()));
+    }
+}
+
+@Service
+public class CachedRatingService {
+    
+    @Cacheable(value = "driver-ratings", key = "#driverId")
+    public DriverRating getDriverRating(String driverId) {
+        return ratingRepository.findByDriverId(driverId);
+    }
+    
+    @CacheEvict(value = "driver-ratings", key = "#driverId")
+    public void updateDriverRating(String driverId, Rating newRating) {
+        ratingRepository.save(newRating);
+        recalculateDriverRating(driverId);
+    }
+}
+```
+
+#### 5.7 Database Connection Pooling
+```properties
+# application-prod.properties
+spring.datasource.hikari.maximum-pool-size=20
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=20000
+spring.datasource.hikari.idle-timeout=300000
+spring.datasource.hikari.max-lifetime=1200000
+spring.datasource.hikari.leak-detection-threshold=60000
+
+# JPA optimizations
+spring.jpa.properties.hibernate.jdbc.batch_size=25
+spring.jpa.properties.hibernate.order_inserts=true
+spring.jpa.properties.hibernate.order_updates=true
+spring.jpa.properties.hibernate.jdbc.batch_versioned_data=true
+```
+
+### 📚 User Training Materials
+
+#### 5.8 Driver Training Guide
+```markdown
+# راهنمای کاربری سیستم امتیازدهی برای رانندگان
+
+## مقدمه
+سیستم امتیازدهی به شما کمک می‌کند تا عملکرد خود را بهبود دهید و درآمد بیشتری کسب کنید.
+
+## نحوه مشاهده امتیاز
+1. وارد اپ شوید
+2. روی "داشبورد" کلیک کنید
+3. امتیاز فعلی خود را مشاهده کنید
+
+## نحوه بهبود امتیاز
+### نظافت خودرو
+- خودرو را روزانه تمیز کنید
+- از عطر ملایم استفاده کنید
+- صندلی‌ها را مرتب نگه دارید
+
+### رفتار مودبانه
+- با لبخند سلام کنید
+- احترام به مسافر داشته باشید
+- صبور باشید
+
+### رانندگی ایمن
+- از سرعت مناسب استفاده کنید
+- ترمز ناگهانی نکنید
+- قوانین راهنمایی را رعایت کنید
+```
+
+#### 5.9 Admin Training Documentation
+```markdown
+# راهنمای مدیریت سیستم امتیازدهی
+
+## پنل مدیریت
+دسترسی به پنل مدیریت از آدرس: https://admin.driverrating.com
+
+## مدیریت رانندگان
+### مشاهده لیست رانندگان
+- رفتن به بخش "رانندگان"
+- فیلتر کردن بر اساس امتیاز، شهر، وضعیت
+
+### مدیریت امتیازات
+- بررسی امتیازات مشکوک
+- حذف امتیازات نامناسب
+- ارسال هشدار به رانندگان
+
+## گزارش‌گیری
+### گزارش‌های آماری
+- آمار کلی سیستم
+- عملکرد رانندگان
+- روندهای امتیازدهی
+```
+
+### ✅ خروجی مرحله 5
+- [ ] سیستم در تولید مستقر شده
+- [ ] نظارت و مانیتورینگ فعال
+- [ ] بهینه‌سازی عملکرد انجام شده
+- [ ] مستندات و آموزش کاربران آماده
+- [ ] پشتیبانی فنی راه‌اندازی شده
+
+---
+
+## ⏱️ زمان‌بندی کلی
+
+| مرحله | مدت زمان | کارهای اصلی | نتیجه |
+|--------|-----------|-------------|-------|
+| **Phase 1** | هفته 1-2 | پایه‌گذاری | سیستم پایه آماده |
+| **Phase 2** | هفته 3-4 | امتیازدهی | سیستم امتیازدهی کامل |
+| **Phase 3** | هفته 5-6 | تحلیل عملکرد | آنالیتیکس و مقایسه |
+| **Phase 4** | هفته 7-8 | گزارش‌گیری | گزارش‌ها و پیش‌بینی |
+| **Phase 5** | هفته 9-10 | استقرار | سیستم در تولید |
+| **Testing** | هفته 11 | تست نهایی | آماده عرضه |
+| **Launch** | هفته 12 | راه‌اندازی | عرضه به بازار |
+
+## 👥 منابع مورد نیاز
+
+### تیم توسعه
+- **Android Developer** (1 نفر) - تجربه Jetpack Compose
+- **Backend Developer** (1 نفر) - Java/Spring Boot یا Node.js
+- **UI/UX Designer** (1 نفر) - طراحی موبایل
+- **DevOps Engineer** (1 نفر) - Docker, Kubernetes
+- **QA Engineer** (1 نفر) - تست نرم‌افزار
+- **Project Manager** (1 نفر) - مدیریت پروژه
+
+### منابع فنی
+- **سرور:** 4 CPU, 16GB RAM, 500GB SSD
+- **دیتابیس:** PostgreSQL Cluster
+- **کش:** Redis Cluster
+- **نظارت:** Prometheus + Grafana
+- **CDN:** CloudFlare یا مشابه
+
+### هزینه‌های تخمینی (ماهانه)
+- سرور: $200-400
+- دیتابیس: $100-200  
+- CDN: $50-100
+- نظارت: $50-100
+- **جمع:** $400-800 در ماه
+
+## 🔐 ملاحظات امنیتی
+
+### احراز هویت
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfiguration {
+    
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(authz -> authz
+                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+            );
+        
+        return http.build();
+    }
+}
+```
+
+### حفاظت از داده‌ها
+- رمزگذاری داده‌های حساس
+- بکاپ‌گیری منظم
+- لاگ‌گذاری دسترسی‌ها
+- محدودیت نرخ درخواست (Rate Limiting)
+
+### GDPR Compliance
+```java
+@Entity
+public class DataRetentionPolicy {
+    private String dataType;
+    private Integer retentionDays;
+    private Boolean canBeDeleted;
+    
+    // پس از انقضا، داده‌ها حذف می‌شوند
+}
+```
+
+## 📈 معیارهای موفقیت
+
+### KPI های فنی
+- **Uptime:** 99.9%+
+- **Response Time:** < 500ms
+- **Error Rate:** < 0.1%
+- **User Satisfaction:** 4.5/5+
+
+### KPI های کسب‌وکار
+- **Driver Engagement:** 80%+ استفاده روزانه
+- **Rating Completion:** 70%+ مسافران امتیاز می‌دهند
+- **Driver Improvement:** 15%+ بهبود عملکرد
+- **Retention:** 90%+ رانندگان ماندگار
+
+## 🚦 مراحل بعدی (Roadmap آینده)
+
+### Quarter 2
+- [ ] اضافه کردن هوش مصنوعی برای تحلیل نظرات
+- [ ] سیستم پیشنهاد مسافر به راننده
+- [ ] اپلیکیشن مسافر
+
+### Quarter 3  
+- [ ] یکپارچه‌سازی با سیستم‌های پرداخت
+- [ ] گسترش به شهرهای دیگر
+- [ ] API عمومی برای شرکای تجاری
+
+### Quarter 4
+- [ ] اپلیکیشن iOS
+- [ ] سیستم مدیریت ناوگان
+- [ ] تحلیلات پیشرفته با Big Data
+
+---
+
+## 📞 تماس و پشتیبانی
+
+- **ایمیل فنی:** tech@driverrating.com
+- **تلفن پشتیبانی:** ۰۲۱-۱۲۳۴۵۶۷۸
+- **مستندات:** https://docs.driverrating.com
+- **گیت‌هاب:** https://github.com/company/driver-rating
+
+---
+
+*این نقشه راه یک راهنمای جامع برای پیاده‌سازی موفق سیستم امتیازدهی راننده است. با پیروی از این مراحل، می‌توانید یک سیستم قدرتمند و مقیاس‌پذیر ایجاد کنید.*
